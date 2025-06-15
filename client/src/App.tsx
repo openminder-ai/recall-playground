@@ -17,7 +17,9 @@ export function App() {
   const booted = useRef(false);
 
   if (!recRef.current) recRef.current = new WavRecorder({ sampleRate: 16000 });
-  if (!playRef.current) playRef.current = new WavStreamPlayer({ sampleRate: 16000 });
+  if (!playRef.current) {
+    playRef.current = new WavStreamPlayer({ sampleRate: 48000 });
+  }
 
   /* ------------------------------------------------------------------ */
   const connect = useCallback(async () => {

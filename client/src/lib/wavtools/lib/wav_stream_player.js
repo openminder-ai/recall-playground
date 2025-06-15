@@ -147,44 +147,37 @@ export class WavStreamPlayer {
     return trackSampleOffset;
   }
 
-    /**
-   * Queues a base-64-encoded audio chunk from ElevenLabs for playback.
-   * Works for both raw 16-bit PCM (e.g. "pcm_16000") and container formats
-   * like MP3/Opus; falls back gracefully if container decoding fails.
-   *
-   * @param {string}  b64      Base-64 string from the `audio_event`
-   * @param {string=} trackId  Optional track identifier
-   */
+  /**
+ * Queues a base-64-encoded audio chunk from ElevenLabs for playback.
+ * Works for both raw 16-bit PCM (e.g. "pcm_16000") and container formats
+ * like MP3/Opus; falls back gracefully if container decoding fails.
+ *
+ * @param {string}  b64      Base-64 string from the `audio_event`
+ * @param {string=} trackId  Optional track identifier
+ */
   async addBase64Audio(b64, trackId = crypto.randomUUID()) {
-    // Decode base-64 → Uint8Array → ArrayBuffer
+    // base-64 → Uint8Array → ArrayBuffer
     const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
-    const buf   = bytes.buffer;
+    const buf = bytes.buffer;
 
-    /* ---------------------------------------------------------------
-      Attempt container decode first (works for MP3 / Opus responses)
-      --------------------------------------------------------------- */
     try {
-      const audioBuffer = await this.context.decodeAudioData(buf.slice(0));
-      const f32 = audioBuffer.getChannelData(0);          // mono
-      const i16 = new Int16Array(f32.length);
+      /* ---------- container formats (mp3 / opus / wav) ---------- */
+      const audio = await this.context.decodeAudioData(buf.slice(0));
+      const f32 = audio.getChannelData(0);        // mono
+      const pcm16 = new Int16Array(f32.length);
+
       for (let i = 0; i < f32.length; i++) {
         const s = Math.max(-1, Math.min(1, f32[i]));
-        i16[i]  = s < 0 ? s * 0x8000 : s * 0x7FFF;       // Float → Int16
+        pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF; // float → int16
       }
-      this.add16BitPCM(i16, trackId);
-      return;                                            // success → done
+      this.add16BitPCM(pcm16, trackId);
     } catch {
-      /* ignore — most ElevenLabs streams are raw PCM, so decode fails */
+      /* ---------- raw PCM 48 kHz (our new ElevenLabs setting) ---- */
+      this.add16BitPCM(new Int16Array(buf), trackId);
     }
-
-    /* ---------------------------------------------------------------
-      Fallback: bytes are already little-endian 16-bit PCM
-      --------------------------------------------------------------- */
-    const pcm = new Int16Array(buf);
-    this.add16BitPCM(pcm, trackId);
   }
 
-  
+
   /**
    * Strips the current stream and returns the sample offset of the audio
    * @param {boolean} [interrupt]
