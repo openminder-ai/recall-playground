@@ -51,8 +51,8 @@ export function App() {
         JSON.stringify({
           type: "conversation_initiation_client_data",
           conversation_config_override: {
-            agent: { language: "en" },            // CHANGE fields as you like
-            tts:  { voice_id: "21m00Tcm4TlvDq8ikWAM" },
+            // agent: { language: "en" },            // CHANGE fields as you like
+            // tts:  { voice_id: "21m00Tcm4TlvDq8ikWAM" },
           },
         }),
       );

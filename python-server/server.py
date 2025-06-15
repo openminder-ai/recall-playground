@@ -8,8 +8,8 @@ from websockets.legacy.client import connect
 from dotenv import load_dotenv
 
 load_dotenv()
-PORT               = int(os.getenv("PORT", 3000))
-AGENT_ID           = os.getenv("AGENT_ID")          # ← required
+PORT               = int(os.getenv("PORT", 8000))
+AGENT_ID           = os.getenv("ELEVENLABS_AGENT_ID")          # ← required
 AGENT_PRIVATE      = os.getenv("AGENT_PRIVATE", "false").lower() == "true"
 ELEVEN_API_KEY     = os.getenv("ELEVENLABS_API_KEY")  # only for private
 
