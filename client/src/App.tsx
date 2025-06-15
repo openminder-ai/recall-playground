@@ -1,73 +1,61 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-// ⬇ ONLY our own helpers now – no @openai/realtime-api-beta
-import {
-  WavRecorder,
-  WavStreamPlayer,
-  WavPacker,
-} from "./lib/wavtools/index.js"
+import { WavRecorder, WavStreamPlayer, WavPacker } from "./lib/wavtools/index.js";
 import "./App.css";
 
+/* helper -------------------------------------------------------------- */
+const b64 = (u8: Uint8Array) => btoa(String.fromCharCode(...u8));
 
-/* ---------- component ---------- */
+/* component ----------------------------------------------------------- */
 export function App() {
-  const qs = new URLSearchParams(window.location.search);
-  const RELAY_URL = qs.get("wss");             // ?wss=ws://relay:3000
-  const [status, setStat] = useState<"disconnected" | "connecting" | "connected">(
-    "disconnected",
-  );
+  const qs        = new URLSearchParams(window.location.search);
+  const RELAY_URL = qs.get("wss");           // e.g. ?wss=ws://localhost:8000
+  const [state, setState] = useState<"disconnected"|"connecting"|"connected">("disconnected");
 
-  /* one-time singletons -------------------------------------------------- */
-  const wsRef = useRef<WebSocket | null>(null);
-  const recRef = useRef<WavRecorder | null>(null);
-  const playRef = useRef<WavStreamPlayer | null>(null);
-  const started = useRef(false);
+  /* singletons -------------------------------------------------------- */
+  const wsRef   = useRef<WebSocket|null>(null);
+  const recRef  = useRef<WavRecorder|null>(null);
+  const playRef = useRef<WavStreamPlayer|null>(null);
+  const booted  = useRef(false);
 
-  if (!recRef.current) recRef.current = new WavRecorder({ sampleRate: 16000 });
+  if (!recRef.current)  recRef.current  = new WavRecorder({ sampleRate: 16000 });
   if (!playRef.current) playRef.current = new WavStreamPlayer({ sampleRate: 16000 });
 
-  /* ---------------- main connect ---------------- */
+  /* ------------------------------------------------------------------ */
   const connect = useCallback(async () => {
-    if (started.current || !RELAY_URL) return;
-    started.current = true;
-    setStat("connecting");
+    if (booted.current || !RELAY_URL) return;
+    booted.current = true;
+    setState("connecting");
 
+    /* 1️⃣  prime mic + speakers first --------------------------------- */
     await recRef.current!.begin();
     await playRef.current!.connect();
 
-    /* WebSocket to OUR relay (the server will forward to ElevenLabs) */
+    /* 2️⃣  open socket to relay --------------------------------------- */
     const ws = new WebSocket(RELAY_URL, "convai");
     wsRef.current = ws;
-    ws.binaryType = "arraybuffer";
 
-    /* handshake once socket is up */
-    ws.addEventListener("open", async () => {
-      setStat("connected");
-      ws.send(
-        JSON.stringify({
-          type: "conversation_initiation_client_data",
-          conversation_config_override: {
-            // agent: { language: "en" },            // CHANGE fields as you like
-            // tts:  { voice_id: "21m00Tcm4TlvDq8ikWAM" },
-          },
-        }),
-      );
-
-      await recRef.current!.record(({ mono }: { mono: any }) => {
-        const pcm = WavPacker.floatTo16BitPCM(mono);        // Int16 → ArrayBuffer
-        const b64 = btoa(String.fromCharCode(...new Uint8Array(pcm)));
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ user_audio_chunk: b64 }));
-        }
-      });
+    ws.addEventListener("open", () => {
+      setState("connected");
+      ws.send(JSON.stringify({ type: "conversation_initiation_client_data" }));
     });
 
-
-    ws.addEventListener("close", () => setStat("disconnected"));
-    ws.addEventListener("error", () => setStat("disconnected"));
-
-    /* ---------- incoming messages ---------- */
+    /* 3️⃣  when INIT-META arrives, start streaming mic ---------------- */
+    let started = false;
     ws.addEventListener("message", async (ev) => {
       const msg = JSON.parse(ev.data);
+
+      /* ---------- handshake done? ---------- */
+      if (msg.type === "conversation_initiation_metadata" && !started) {
+        started = true;
+        await recRef.current!.record(({ mono }: { mono: any}) => {
+          const pcm = WavPacker.floatTo16BitPCM(mono);     // Int16-LE
+          if (ws.readyState === WebSocket.OPEN)
+            ws.send(JSON.stringify({ user_audio_chunk: b64(new Uint8Array(pcm)) }));
+        });
+        return;                                           // nothing else to do for this message
+      }
+
+      /* ---------- normal incoming events ---------- */
       switch (msg.type) {
         case "audio":
           playRef.current!.addBase64Mp3(msg.audio_event.audio_base_64);
@@ -82,31 +70,27 @@ export function App() {
           await playRef.current!.interrupt();
           break;
         default:
-          console.debug("Unhandled", msg);
+          // ignore
       }
     });
 
-
-
+    ws.addEventListener("close", () => setState("disconnected"));
+    ws.addEventListener("error", () => setState("disconnected"));
   }, [RELAY_URL]);
 
-  /* kick things off on mount */
-  useEffect(() => {
-    if (RELAY_URL) connect();
-  }, [RELAY_URL, connect]);
+  useEffect(() => { if (RELAY_URL) connect(); }, [RELAY_URL, connect]);
 
-  /* ---------- tiny status UI ---------- */
-  const err = !RELAY_URL ? 'Missing "?wss=" query param' : null;
-
+  /* simple status UI -------------------------------------------------- */
+  const err = !RELAY_URL ? 'Missing "?wss=" param' : null;
   return (
     <div className="app-container">
       <div className="status-indicator">
-        <div className={`status-dot ${err ? "disconnected" : status}`} />
+        <div className={`status-dot ${err ? "disconnected" : state}`} />
         <div className="status-text">
           <div className="status-label">
             {err ? "Error:" :
-              status === "connecting" ? "Connecting to:" :
-                status === "connected" ? "Connected to:" : "Disconnected from:"}
+             state === "connecting" ? "Connecting to:" :
+             state === "connected"  ? "Connected to:"  : "Disconnected from:"}
           </div>
           <div className="status-url">{err || RELAY_URL}</div>
         </div>
