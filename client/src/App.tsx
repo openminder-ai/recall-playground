@@ -4,7 +4,7 @@ import {
   WavRecorder,
   WavStreamPlayer,
   WavPacker,
-} from "./lib/wavtools/index.js";
+} from "./lib/wavtools/index.js"
 import "./App.css";
 
 /* ---------- simple helpers ---------- */
