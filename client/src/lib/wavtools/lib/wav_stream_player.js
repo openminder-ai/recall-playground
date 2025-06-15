@@ -147,25 +147,16 @@ export class WavStreamPlayer {
     return trackSampleOffset;
   }
 
-  async addBase64Audio(b64, trackId = crypto.randomUUID()) {
-    // 1. base-64 → ArrayBuffer
-    const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer;
-  
-    // 2. decode with Web Audio (handles mp3, opus, wav…)
-    const audio = await this.context.decodeAudioData(bin);
-    const f32 = audio.getChannelData(0); // mono
-  
-    // 3. Float32 -1..1 → Int16
-    const i16 = new Int16Array(f32.length);
-    for (let i = 0; i < f32.length; i++) {
-      const s = Math.max(-1, Math.min(1, f32[i]));
-      i16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-    }
-  
-    // 4. enqueue
-    this.add16BitPCM(i16, trackId);
+  async addBase64Mp3(base64) {
+    const ctx      = this.context;                       // audioCtx
+    const mp3Buf   = Uint8Array.from(atob(base64), c => c.charCodeAt(0)).buffer;
+    const pcmBuf   = await ctx.decodeAudioData(mp3Buf);
+    this.add16BitPCM(
+      WavPacker.floatTo16BitPCM(pcmBuf.getChannelData(0)), // reuse existing queue
+      crypto.randomUUID(),                                 // new track id
+    );
   }
-  
+
   /**
    * Strips the current stream and returns the sample offset of the audio
    * @param {boolean} [interrupt]

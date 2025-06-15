@@ -77,7 +77,7 @@ export function App() {
       /* 2️⃣  NORMAL EVENT HANDLING -------------------------------------- */
       switch (msg.type) {
         case "audio":
-          playRef.current!.addBase64Audio(msg.audio_event.audio_base_64);
+          playRef.current!.addBase64Mp3(msg.audio_event.audio_base_64);
           break;
         case "agent_response":
           console.log("Agent:", msg.agent_response_event.agent_response);

@@ -43,7 +43,7 @@ export class WavStreamPlayer {
   
   connect(): Promise<boolean>;
   add16BitPCM(arrayBuffer: ArrayBuffer | Int16Array, trackId?: string): Int16Array;
-  addBase64Audio(base64: string): Promise<void>;
+  addBase64Mp3(base64: string): Promise<void>;
   getTrackSampleOffset(interrupt?: boolean): Promise<{
     trackId: string | null;
     offset: number;
