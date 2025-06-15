@@ -3,21 +3,20 @@ import { WavRecorder, WavStreamPlayer, WavPacker } from "./lib/wavtools/index.js
 import "./App.css";
 
 /* helper -------------------------------------------------------------- */
-const b64 = (u8: Uint8Array) => btoa(String.fromCharCode(...u8));
 
 /* component ----------------------------------------------------------- */
 export function App() {
-  const qs        = new URLSearchParams(window.location.search);
+  const qs = new URLSearchParams(window.location.search);
   const RELAY_URL = qs.get("wss");           // e.g. ?wss=ws://localhost:8000
-  const [state, setState] = useState<"disconnected"|"connecting"|"connected">("disconnected");
+  const [state, setState] = useState<"disconnected" | "connecting" | "connected">("disconnected");
 
   /* singletons -------------------------------------------------------- */
-  const wsRef   = useRef<WebSocket|null>(null);
-  const recRef  = useRef<WavRecorder|null>(null);
-  const playRef = useRef<WavStreamPlayer|null>(null);
-  const booted  = useRef(false);
+  const wsRef = useRef<WebSocket | null>(null);
+  const recRef = useRef<WavRecorder | null>(null);
+  const playRef = useRef<WavStreamPlayer | null>(null);
+  const booted = useRef(false);
 
-  if (!recRef.current)  recRef.current  = new WavRecorder({ sampleRate: 16000 });
+  if (!recRef.current) recRef.current = new WavRecorder({ sampleRate: 16000 });
   if (!playRef.current) playRef.current = new WavStreamPlayer({ sampleRate: 16000 });
 
   /* ------------------------------------------------------------------ */
@@ -47,11 +46,29 @@ export function App() {
       /* ---------- handshake done? ---------- */
       if (msg.type === "conversation_initiation_metadata" && !started) {
         started = true;
-        await recRef.current!.record(({ mono }: { mono: any}) => {
-          const pcm = WavPacker.floatTo16BitPCM(mono);     // Int16-LE
-          if (ws.readyState === WebSocket.OPEN)
-            ws.send(JSON.stringify({ user_audio_chunk: b64(new Uint8Array(pcm)) }));
+
+        await recRef.current!.record(({ mono }: { mono: any }) => {
+          /* ── DROP EMPTY / SILENT BUFFERS BEFORE SENDING ───────────── */
+          if (!mono?.length) return;                       // zero-length chunk
+          let nonZero = false;
+          for (let i = 0; i < mono.length; i++) {          // quick RMS check
+            if (mono[i] !== 0) { nonZero = true; break; }
+          }
+          if (!nonZero) return;                            // all-zero chunk
+
+          const pcm = WavPacker.floatTo16BitPCM(mono);
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(
+              JSON.stringify({
+                user_audio_chunk: btoa(
+                  String.fromCharCode(...new Uint8Array(pcm))
+                ),
+              })
+            );
+          }
         });
+
+
         return;                                           // nothing else to do for this message
       }
 
@@ -70,7 +87,7 @@ export function App() {
           await playRef.current!.interrupt();
           break;
         default:
-          // ignore
+        // ignore
       }
     });
 
@@ -89,8 +106,8 @@ export function App() {
         <div className="status-text">
           <div className="status-label">
             {err ? "Error:" :
-             state === "connecting" ? "Connecting to:" :
-             state === "connected"  ? "Connected to:"  : "Disconnected from:"}
+              state === "connecting" ? "Connecting to:" :
+                state === "connected" ? "Connected to:" : "Disconnected from:"}
           </div>
           <div className="status-url">{err || RELAY_URL}</div>
         </div>
