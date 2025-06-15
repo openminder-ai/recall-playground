@@ -1,65 +1,96 @@
-/*  client/src/lib/wavtools/lib/worklets/stream_processor.js  */
 export const StreamProcessorWorklet = `
 class StreamProcessor extends AudioWorkletProcessor {
-  constructor(options) {
+  constructor() {
     super();
-    const { bufferLength = 2048 } = options.processorOptions ?? {};
-    this.bufferLength = bufferLength;
-    this.outBuffers   = [];
-    this.write        = { buffer: new Float32Array(this.bufferLength), trackId: null };
-    this.writeOffset  = 0;
-    this.trackSampleOffsets = {};
+    this.hasStarted = false;
     this.hasInterrupted = false;
-
-    this.port.onmessage = (e) => {
-      const p = e.data || {};
-      if (p.event === 'write')            this._queue(p.buffer, p.trackId);
-      else if (p.event === 'offset' ||
-               p.event === 'interrupt')   this._handleOffset(p);
+    this.outputBuffers = [];
+    this.bufferLength = 128;
+    this.write = { buffer: new Float32Array(this.bufferLength), trackId: null };
+    this.writeOffset = 0;
+    this.trackSampleOffsets = {};
+    this.port.onmessage = (event) => {
+      if (event.data) {
+        const payload = event.data;
+        if (payload.event === 'write') {
+          const int16Array = payload.buffer;
+          const float32Array = new Float32Array(int16Array.length);
+          for (let i = 0; i < int16Array.length; i++) {
+            float32Array[i] = int16Array[i] / 0x8000; // Convert Int16 to Float32
+          }
+          this.writeData(float32Array, payload.trackId);
+        } else if (
+          payload.event === 'offset' ||
+          payload.event === 'interrupt'
+        ) {
+          const requestId = payload.requestId;
+          const trackId = this.write.trackId;
+          const offset = this.trackSampleOffsets[trackId] || 0;
+          this.port.postMessage({
+            event: 'offset',
+            requestId,
+            trackId,
+            offset,
+          });
+          if (payload.event === 'interrupt') {
+            this.hasInterrupted = true;
+          }
+        } else {
+          throw new Error(\`Unhandled event "\${payload.event}"\`);
+        }
+      }
     };
   }
 
-  _queue(int16, trackId = null) {
-    const f32 = new Float32Array(int16.length);
-    for (let i = 0; i < int16.length; i++) f32[i] = int16[i] / 0x8000;
+  writeData(float32Array, trackId = null) {
     let { buffer } = this.write;
-    let off = this.writeOffset;
-    for (let v of f32) {
-      buffer[off++] = v;
-      if (off >= buffer.length) {
-        this.outBuffers.push(this.write);
+    let offset = this.writeOffset;
+    for (let i = 0; i < float32Array.length; i++) {
+      buffer[offset++] = float32Array[i];
+      if (offset >= buffer.length) {
+        this.outputBuffers.push(this.write);
         this.write = { buffer: new Float32Array(this.bufferLength), trackId };
         buffer = this.write.buffer;
-        off = 0;
+        offset = 0;
       }
     }
-    this.writeOffset = off;
-  }
-
-  _handleOffset({ requestId, event }) {
-    const trackId = this.write.trackId;
-    const offset  = this.trackSampleOffsets[trackId] || 0;
-    this.port.postMessage({ event: 'offset', requestId, trackId, offset });
-    if (event === 'interrupt') this.hasInterrupted = true;
-  }
-
-  process(_inputs, outputs) {
-    const out = outputs[0][0];
-    if (this.hasInterrupted) return false;
-
-    if (this.outBuffers.length) {
-      const { buffer, trackId } = this.outBuffers.shift();
-      out.set(buffer.subarray(0, out.length));      // copy
-      if (trackId) {
-        this.trackSampleOffsets[trackId] = (this.trackSampleOffsets[trackId]||0)+buffer.length;
-      }
-    } else {
-      out.fill(0);                                  // play silence, stay alive
-    }
+    this.writeOffset = offset;
     return true;
   }
+
+  process(inputs, outputs, parameters) {
+    const output = outputs[0];
+    const outputChannelData = output[0];
+    const outputBuffers = this.outputBuffers;
+    if (this.hasInterrupted) {
+      this.port.postMessage({ event: 'stop' });
+      return false;
+    } else if (outputBuffers.length) {
+      this.hasStarted = true;
+      const { buffer, trackId } = outputBuffers.shift();
+      for (let i = 0; i < outputChannelData.length; i++) {
+        outputChannelData[i] = buffer[i] || 0;
+      }
+      if (trackId) {
+        this.trackSampleOffsets[trackId] =
+          this.trackSampleOffsets[trackId] || 0;
+        this.trackSampleOffsets[trackId] += buffer.length;
+      }
+      return true;
+    } else if (this.hasStarted) {
+      this.port.postMessage({ event: 'stop' });
+      return false;
+    } else {
+      return true;
+    }
+  }
 }
+
 registerProcessor('stream_processor', StreamProcessor);
 `;
-const script = new Blob([StreamProcessorWorklet], { type: 'application/javascript' });
-export const StreamProcessorSrc = URL.createObjectURL(script);
+
+const script = new Blob([StreamProcessorWorklet], {
+  type: 'application/javascript',
+});
+const src = URL.createObjectURL(script);
+export const StreamProcessorSrc = src;

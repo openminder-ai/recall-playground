@@ -17,9 +17,7 @@ export function App() {
   const booted = useRef(false);
 
   if (!recRef.current) recRef.current = new WavRecorder({ sampleRate: 16000 });
-  if (!playRef.current) {
-    playRef.current = new WavStreamPlayer({ sampleRate: 48000 });
-  }
+  if (!playRef.current) playRef.current = new WavStreamPlayer({ sampleRate: 16000 });
 
   /* ------------------------------------------------------------------ */
   const connect = useCallback(async () => {
@@ -45,11 +43,6 @@ export function App() {
 
     ws.addEventListener("message", async (ev) => {
       const msg = JSON.parse(ev.data);
-
-      if (msg.type === "conversation_initiation_metadata" ||
-        msg.conversation_initiation_metadata_event) {
-        console.log(msg)
-      }
 
       /* 1️⃣  HANDSHAKE COMPLETE?  --------------------------------------- */
       const gotMeta =

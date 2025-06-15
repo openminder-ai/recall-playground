@@ -46,6 +46,7 @@ class Relay:
             async def pump(src, dst):
                 while True:
                     msg = await src.recv()
+                    print(msg)
                     await dst.send(msg)
 
             await asyncio.gather(
