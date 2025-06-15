@@ -7,10 +7,6 @@ import {
 } from "./lib/wavtools/index.js"
 import "./App.css";
 
-/* ---------- simple helpers ---------- */
-function uint8ToB64(u8: Uint8Array) {
-  return btoa(String.fromCharCode(...u8));
-}
 
 /* ---------- component ---------- */
 export function App() {
