@@ -40,37 +40,41 @@ export function App() {
 
     /* 3️⃣  when INIT-META arrives, start streaming mic ---------------- */
     let started = false;
+
     ws.addEventListener("message", async (ev) => {
       const msg = JSON.parse(ev.data);
 
-      /* ---------- handshake done? ---------- */
-      if (msg.type === "conversation_initiation_metadata" && !started) {
+      /* 1️⃣  HANDSHAKE COMPLETE?  --------------------------------------- */
+      const gotMeta =
+        (!started &&
+          (msg.type === "conversation_initiation_metadata" ||
+            msg.conversation_initiation_metadata_event));
+      if (gotMeta) {
         started = true;
 
-        await recRef.current!.record(({ mono }: { mono: any }) => {
-          /* ── DROP EMPTY / SILENT BUFFERS BEFORE SENDING ───────────── */
-          if (!mono?.length) return;
+        await recRef.current!.record(({ mono }) => {
+          if (!mono || mono.byteLength === 0) return;           // empty chunk
 
-          /* 2️⃣ very-light VAD: RMS > 0 means not silent */
-          let sum = 0;
-          for (let i = 0; i < mono.length; i++) sum += mono[i] * mono[i];
-          if (sum === 0) return;                           // silent frame
+          // quick silence test: every byte == 0?
+          const u8 = new Uint8Array(mono);
+          let nonZero = false;
+          for (let i = 0; i < u8.length; i++) {
+            if (u8[i] !== 0) { nonZero = true; break; }
+          }
+          if (!nonZero) return;                                 // silent frame
 
-          /* 3️⃣ send the raw Int16 PCM (little-endian) */
-          const pcm = new Uint8Array(mono.buffer, mono.byteOffset, mono.byteLength);
-          if (ws.readyState === WebSocket.OPEN)
+          if (ws.readyState === WebSocket.OPEN) {
             ws.send(
               JSON.stringify({
-                user_audio_chunk: btoa(String.fromCharCode(...pcm)),
+                user_audio_chunk: btoa(String.fromCharCode(...u8)),
               }),
             );
+          }
         });
-
-
-        return;                                           // nothing else to do for this message
+        return; // meta message handled, nothing else to do
       }
 
-      /* ---------- normal incoming events ---------- */
+      /* 2️⃣  NORMAL EVENT HANDLING -------------------------------------- */
       switch (msg.type) {
         case "audio":
           playRef.current!.addBase64Mp3(msg.audio_event.audio_base_64);
@@ -85,7 +89,7 @@ export function App() {
           await playRef.current!.interrupt();
           break;
         default:
-        // ignore
+        // ignore everything else
       }
     });
 
