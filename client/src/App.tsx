@@ -83,7 +83,15 @@ export function App() {
           console.log("Agent:", msg.agent_response_event.agent_response);
           break;
         case "ping":
-          ws.send(JSON.stringify({ type: "pong", event_id: msg.ping_event.event_id }));
+          const eventId = msg.ping_event?.event_id;
+          if (typeof eventId === 'number') {
+            ws.send(JSON.stringify({
+              type: "pong",
+              event_id: eventId  // Make sure it's the actual integer
+            }));
+          } else {
+            console.error('Invalid ping event_id:', eventId);
+          }
           break;
         case "interruption":
           await playRef.current!.interrupt();
