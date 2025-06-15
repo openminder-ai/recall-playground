@@ -44,6 +44,11 @@ export function App() {
     ws.addEventListener("message", async (ev) => {
       const msg = JSON.parse(ev.data);
 
+      if (msg.type === "conversation_initiation_metadata" ||
+        msg.conversation_initiation_metadata_event) {
+        console.log(msg)
+      }
+
       /* 1️⃣  HANDSHAKE COMPLETE?  --------------------------------------- */
       const gotMeta =
         (!started &&
