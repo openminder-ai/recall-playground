@@ -14,20 +14,20 @@ function uint8ToB64(u8: Uint8Array) {
 
 /* ---------- component ---------- */
 export function App() {
-  const qs                 = new URLSearchParams(window.location.search);
-  const RELAY_URL          = qs.get("wss");             // ?wss=ws://relay:3000
-  const [status, setStat]  = useState<"disconnected" | "connecting" | "connected">(
+  const qs = new URLSearchParams(window.location.search);
+  const RELAY_URL = qs.get("wss");             // ?wss=ws://relay:3000
+  const [status, setStat] = useState<"disconnected" | "connecting" | "connected">(
     "disconnected",
   );
 
   /* one-time singletons -------------------------------------------------- */
-  const wsRef   = useRef<WebSocket | null>(null);
-  const recRef  = useRef<WavRecorder  | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const recRef = useRef<WavRecorder | null>(null);
   const playRef = useRef<WavStreamPlayer | null>(null);
   const started = useRef(false);
 
-  if (!recRef.current)  recRef.current  = new WavRecorder({ sampleRate: 24000 });
-  if (!playRef.current) playRef.current = new WavStreamPlayer({ sampleRate: 24000 });
+  if (!recRef.current) recRef.current = new WavRecorder({ sampleRate: 16000 });
+  if (!playRef.current) playRef.current = new WavStreamPlayer({ sampleRate: 16000 });
 
   /* ---------------- main connect ---------------- */
   const connect = useCallback(async () => {
@@ -35,17 +35,16 @@ export function App() {
     started.current = true;
     setStat("connecting");
 
-    /* mic + speakers */
     await recRef.current!.begin();
     await playRef.current!.connect();
 
     /* WebSocket to OUR relay (the server will forward to ElevenLabs) */
-    const ws                 = new WebSocket(RELAY_URL, "convai");
-    wsRef.current            = ws;
-    ws.binaryType            = "arraybuffer";
+    const ws = new WebSocket(RELAY_URL, "convai");
+    wsRef.current = ws;
+    ws.binaryType = "arraybuffer";
 
     /* handshake once socket is up */
-    ws.addEventListener("open", () => {
+    ws.addEventListener("open", async () => {
       setStat("connected");
       ws.send(
         JSON.stringify({
@@ -56,7 +55,16 @@ export function App() {
           },
         }),
       );
+
+      await recRef.current!.record(({ mono }: { mono: any }) => {
+        const pcm = WavPacker.floatTo16BitPCM(mono);        // Int16 → ArrayBuffer
+        const b64 = btoa(String.fromCharCode(...new Uint8Array(pcm)));
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ user_audio_chunk: b64 }));
+        }
+      });
     });
+
 
     ws.addEventListener("close", () => setStat("disconnected"));
     ws.addEventListener("error", () => setStat("disconnected"));
@@ -82,12 +90,8 @@ export function App() {
       }
     });
 
-    /* ---------- outgoing mic stream ---------- */
-    await recRef.current!.record(({ mono }: { mono: any}) => {
-      const pcm   = WavPacker.floatTo16BitPCM(mono);   // Uint8Array buffer
-      const b64   = uint8ToB64(new Uint8Array(pcm));
-      ws.send(JSON.stringify({ user_audio_chunk: b64 }));
-    });
+
+
   }, [RELAY_URL]);
 
   /* kick things off on mount */
@@ -105,8 +109,8 @@ export function App() {
         <div className="status-text">
           <div className="status-label">
             {err ? "Error:" :
-             status === "connecting" ? "Connecting to:" :
-             status === "connected"  ? "Connected to:"  : "Disconnected from:"}
+              status === "connecting" ? "Connecting to:" :
+                status === "connected" ? "Connected to:" : "Disconnected from:"}
           </div>
           <div className="status-url">{err || RELAY_URL}</div>
         </div>
