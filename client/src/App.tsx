@@ -83,7 +83,7 @@ export function App() {
     });
 
     /* ---------- outgoing mic stream ---------- */
-    await recRef.current!.record(({ mono }) => {
+    await recRef.current!.record(({ mono }: { mono: any}) => {
       const pcm   = WavPacker.floatTo16BitPCM(mono);   // Uint8Array buffer
       const b64   = uint8ToB64(new Uint8Array(pcm));
       ws.send(JSON.stringify({ user_audio_chunk: b64 }));
