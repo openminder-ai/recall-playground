@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { WavRecorder, WavStreamPlayer, WavPacker } from "./lib/wavtools/index.js";
+import { WavRecorder, WavStreamPlayer } from "./lib/wavtools/index.js";
 import "./App.css";
 
 /* helper -------------------------------------------------------------- */
@@ -49,23 +49,21 @@ export function App() {
 
         await recRef.current!.record(({ mono }: { mono: any }) => {
           /* ── DROP EMPTY / SILENT BUFFERS BEFORE SENDING ───────────── */
-          if (!mono?.length) return;                       // zero-length chunk
-          let nonZero = false;
-          for (let i = 0; i < mono.length; i++) {          // quick RMS check
-            if (mono[i] !== 0) { nonZero = true; break; }
-          }
-          if (!nonZero) return;                            // all-zero chunk
+          if (!mono?.length) return;
 
-          const pcm = WavPacker.floatTo16BitPCM(mono);
-          if (ws.readyState === WebSocket.OPEN) {
+          /* 2️⃣ very-light VAD: RMS > 0 means not silent */
+          let sum = 0;
+          for (let i = 0; i < mono.length; i++) sum += mono[i] * mono[i];
+          if (sum === 0) return;                           // silent frame
+
+          /* 3️⃣ send the raw Int16 PCM (little-endian) */
+          const pcm = new Uint8Array(mono.buffer, mono.byteOffset, mono.byteLength);
+          if (ws.readyState === WebSocket.OPEN)
             ws.send(
               JSON.stringify({
-                user_audio_chunk: btoa(
-                  String.fromCharCode(...new Uint8Array(pcm))
-                ),
-              })
+                user_audio_chunk: btoa(String.fromCharCode(...pcm)),
+              }),
             );
-          }
         });
 
 
