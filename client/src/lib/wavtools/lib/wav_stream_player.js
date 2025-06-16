@@ -1,5 +1,6 @@
 import { StreamProcessorSrc } from './worklets/stream_processor.js';
 import { AudioAnalysis } from './analysis/audio_analysis.js';
+import { WavPacker } from './wav_packer.js'; // ← ADD THIS IMPORT
 
 /**
  * Plays audio streams received in raw PCM16 chunks from the browser
@@ -147,12 +148,17 @@ export class WavStreamPlayer {
     return trackSampleOffset;
   }
 
+  /**
+   * Adds base64 encoded MP3 audio to the stream (converts to PCM16 first)
+   * @param {string} base64 base64 encoded MP3 data
+   * @returns {Promise<void>}
+   */
   async addBase64Mp3(base64) {
     const ctx      = this.context;                       // audioCtx
     const mp3Buf   = Uint8Array.from(atob(base64), c => c.charCodeAt(0)).buffer;
     const pcmBuf   = await ctx.decodeAudioData(mp3Buf);
     this.add16BitPCM(
-      WavPacker.floatTo16BitPCM(pcmBuf.getChannelData(0)), // reuse existing queue
+      WavPacker.floatTo16BitPCM(pcmBuf.getChannelData(0)), // Now WavPacker is imported
       crypto.randomUUID(),                                 // new track id
     );
   }

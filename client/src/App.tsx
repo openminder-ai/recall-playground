@@ -19,6 +19,21 @@ export function App() {
   if (!recRef.current) recRef.current = new WavRecorder({ sampleRate: 16000 });
   if (!playRef.current) playRef.current = new WavStreamPlayer({ sampleRate: 16000 });
 
+  /* Helper function to handle PCM16 audio from ElevenLabs */
+  const handlePCMAudio = useCallback((base64Audio: string) => {
+    try {
+      console.log(`🔊 Playing audio chunk: ${base64Audio.length} chars`);
+      // Decode base64 to bytes
+      const pcmBytes = Uint8Array.from(atob(base64Audio), c => c.charCodeAt(0));
+      // Convert to Int16Array (PCM16)
+      const pcmArray = new Int16Array(pcmBytes.buffer);
+      // Add to stream player
+      playRef.current!.add16BitPCM(pcmArray);
+    } catch (error) {
+      console.error('❌ Error playing PCM audio:', error);
+    }
+  }, []);
+
   /* ------------------------------------------------------------------ */
   const connect = useCallback(async () => {
     if (booted.current || !RELAY_URL) return;
@@ -77,10 +92,13 @@ export function App() {
       /* 2️⃣  NORMAL EVENT HANDLING -------------------------------------- */
       switch (msg.type) {
         case "audio":
-          playRef.current!.addBase64Mp3(msg.audio_event.audio_base_64);
+          // ✅ FIXED: Handle PCM16 audio from ElevenLabs
+          if (msg.audio_event?.audio_base_64) {
+            handlePCMAudio(msg.audio_event.audio_base_64);
+          }
           break;
         case "agent_response":
-          console.log("Agent:", msg.agent_response_event.agent_response);
+          console.log("🤖 Agent:", msg.agent_response_event.agent_response);
           break;
         case "ping":
           const eventId = msg.ping_event?.event_id;
@@ -96,6 +114,12 @@ export function App() {
         case "interruption":
           await playRef.current!.interrupt();
           break;
+        case "user_transcript":
+          // Handle user transcript if needed
+          if (msg.user_transcription_event?.user_transcript) {
+            console.log("👤 User said:", msg.user_transcription_event.user_transcript);
+          }
+          break;
         default:
         // ignore everything else
       }
@@ -103,7 +127,7 @@ export function App() {
 
     ws.addEventListener("close", () => setState("disconnected"));
     ws.addEventListener("error", () => setState("disconnected"));
-  }, [RELAY_URL]);
+  }, [RELAY_URL, handlePCMAudio]);
 
   useEffect(() => { if (RELAY_URL) connect(); }, [RELAY_URL, connect]);
 
